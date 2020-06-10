@@ -9,7 +9,8 @@ using namespace std;
 
 class Action {
 public:
-    Action(const int dx, const int dy, const float gCost) 
+    //Assume dx, dy is either 1, 0, -1
+    Action(const int dx, const int dy, const float gCost)
     : dx(dx), dy(dy), gCost(gCost) {}
 
     const int dx, dy; // amount of grid spaces traversed
@@ -26,10 +27,10 @@ public:
 
 class Rectangle {
 public:
-    Rectangle(Point bottomLeft, Point topRight) 
+    Rectangle(Point bottomLeft, Point topRight)
     : bottomLeft(bottomLeft), topRight(topRight) {}
 
-    Point bottomLeft, topRight; // top left point
+    Point bottomLeft, topRight;
 };
 
 enum State {
@@ -49,8 +50,8 @@ public:
         return gCost + hCost;
     }
 
-    float distTo(Node node) const {
-        return sqrt(pow(x-node.x, 2) + pow(y-node.y, 2));
+    float distTo(Node* node) const {
+        return sqrt(pow(x-node->x, 2) + pow(y-node->y, 2));
     }
 
     State state;
@@ -59,34 +60,37 @@ public:
     Node* parent;
 };
 
-bool operator == (const Node left, const Node right) {
-    return left.x == right.x && left.y == right.y;
-}
-
-bool operator < (const Node left, const Node right) {
-    float fCostDiff = left.getFCost() - right.getFCost();
-    if (fabs(fCostDiff) > EPSILON)
-        return true;
-    else
-        return left.hCost < right.hCost;
-}
+class nodeGreaterThan {
+public:
+    bool operator () (const Node* lhs, const Node* rhs) {
+        float fCostDiff = lhs->getFCost() - rhs->getFCost();
+        if (fabs(fCostDiff) < EPSILON) //equal fCost
+            return lhs->hCost > rhs->hCost;
+        else
+            return fCostDiff > 0.0;
+    }
+};
 
 class Grid {
-    int getXIndex(Point point) {
-        int x = point.x - rect.bottomLeft.x;
-        return x * numNodesX;
+    int getXIndex(Point point, bool topRight=false) {
+        int index = (point.x - rect.bottomLeft.x) / nodeSize;
+        if (topRight)
+            index--;
+        return index;
     }
 
-    int getYIndex(Point point) {
-        int y = point.y - rect.bottomLeft.y;
-        return y * numNodesY;
+    int getYIndex(Point point, bool topRight=false) {
+        int index = (point.y - rect.bottomLeft.y) / nodeSize;
+        if (topRight)
+            index--;
+        return index;
     }
 
 public:
     Grid(Rectangle rect, vector<Rectangle> obstacles, float nodeSize=0.05) :
     nodeSize(nodeSize), 
     rect(rect), 
-    numNodesX((rect.topRight.x - rect.bottomLeft.x) / nodeSize), 
+    numNodesX((rect.topRight.x - rect.bottomLeft.x) / nodeSize),
     numNodesY((rect.topRight.y - rect.bottomLeft.y)  / nodeSize),
     nodes(numNodesX) {
         for (int i = 0; i < numNodesX; i++) {
@@ -99,8 +103,8 @@ public:
         for (Rectangle obstacle : obstacles) {
             int minX = getXIndex(obstacle.bottomLeft);
             int minY = getYIndex(obstacle.bottomLeft);
-            int maxX = getXIndex(obstacle.topRight);
-            int maxY = getYIndex(obstacle.topRight);
+            int maxX = getXIndex(obstacle.topRight, true);
+            int maxY = getYIndex(obstacle.topRight, true);
 
             for (int i = minX; i <= maxX; i++) {
                 for (int j = minY; j <= maxY; j++)
@@ -109,8 +113,8 @@ public:
         }
     }
 
-    Node getNode(Point pos) {
-        return nodes[getXIndex(pos)][getYIndex(pos)];
+    Node* getNode(Point pos) {
+        return &nodes[getXIndex(pos)][getYIndex(pos)];
     }
 
     bool inBounds(int x, int y) {
@@ -118,9 +122,9 @@ public:
     }
 
     void print() {
-        for (int i = 0; i < numNodesX; i++) {
-            for (int j = 0; j < numNodesY; j++) {
-                cout << nodes[i][j].state << " ";
+        for (int j = numNodesY-1; j >= 0; j--) {
+            for (int i = 0; i < numNodesX; i++) {
+                cout << (char) nodes[i][j].state << " ";
             }
             cout << endl;
         }
@@ -134,7 +138,6 @@ public:
 };
 
 class AStar {
-    Grid grid;
     vector<Action> actions;
 
 public:
@@ -142,45 +145,47 @@ public:
     : grid(grid), actions(actions) {}
 
     void findPath(Point start, Point end) {
-        Node startNode = grid.getNode(start);
-        Node endNode = grid.getNode(end);
+        Node* startNode = grid.getNode(start);
+        Node* endNode = grid.getNode(end);
+        startNode->state = IN_OPEN;
+        startNode->gCost = 0.0;
+        startNode->hCost = startNode->distTo(endNode);
 
-        startNode.state = IN_OPEN;
-        priority_queue<Node> openSet;
+        priority_queue<Node*, vector<Node*>, nodeGreaterThan> openSet;
         openSet.push(startNode);
 
         while (!openSet.empty()) {
-            Node currNode = openSet.top();
+            Node* currNode = openSet.top();
 
             if (currNode == endNode) {
-                setPath(&endNode);
+                setPath(endNode);
                 return;
             }
                 
             openSet.pop();
-            startNode.state = IN_CLOSED;
+            currNode->state = IN_CLOSED;
 
             for (Action action : actions) {
-                int adjX = currNode.x + action.dx;
-                int adjY = currNode.y + action.dy;
+                int adjX = currNode->x + action.dx;
+                int adjY = currNode->y + action.dy;
 
                 if (!grid.inBounds(adjX, adjY))
                     continue;
 
-                Node adjNode = grid.nodes[adjX][adjY];
+                Node* adjNode = &grid.nodes[adjX][adjY];
 
-                if (adjNode.state == OBSTACLE || adjNode.state == IN_CLOSED)
+                if (adjNode->state == OBSTACLE || adjNode->state == IN_CLOSED)
                     continue;
 
-                int newGCost = currNode.gCost + action.gCost;
-                if (newGCost < adjNode.gCost) {
-                    adjNode.gCost = newGCost;
-                    adjNode.parent = &currNode;
+                float newGCost = currNode->gCost + action.gCost;
+                if (newGCost < adjNode->gCost) {
+                    adjNode->gCost = newGCost;
+                    adjNode->parent = currNode;
                 }
 
-                if (adjNode.state == EMPTY) {
-                    adjNode.hCost = adjNode.distTo(endNode);
-                    adjNode.state = IN_OPEN;
+                if (adjNode->state == EMPTY) {
+                    adjNode->hCost = adjNode->distTo(endNode);
+                    adjNode->state = IN_OPEN;
                     openSet.push(adjNode);
                 }
             }
@@ -190,18 +195,20 @@ public:
     void setPath(Node* node) {
         while (node != NULL) {
             node->state = PATH;
-            node = node->parent
+            node = node->parent;
         }
     }
+
+    Grid grid;
 };
 
 int main() {
     Rectangle rect(Point(0.0, 0.0), Point(11.0, 11.0));
     vector<Rectangle> obstacles {
-        Rectangle(Point(4.0, 0.0), Point(5.0, 7.0)),
-        Rectangle(Point(8.0, 4.0), Point(9.0, 11.0))
+        Rectangle(Point(3.0, 0.0), Point(4.0, 7.0)),
+        Rectangle(Point(7.0, 4.0), Point(8.0, 11.0))
     };
-    Grid grid(rect, obstacles, 1.0);
+    Grid grid(rect, obstacles);
     vector<Action> actions {
         Action(1, 0, 1.0),
         Action(0, 1, 1.0),
@@ -214,5 +221,6 @@ int main() {
     };
 
     AStar aStar(grid, actions);
-    aStar.findPath(Point(1.0, 1.0), Point(9.0, 9.0))
+    aStar.findPath(Point(1.0, 1.0), Point(9.0, 9.0));
+    aStar.grid.print();
 }
