@@ -1,0 +1,29 @@
+{
+    "configurations": [
+        {
+            "browse": {
+                "databaseFilename": "",
+                "limitSymbolsToIncludedHeaders": true
+            },
+            "includePath": [
+                "/opt/ros/melodic/include/**",
+                "/home/kdoubled/ros_ws/devel/include/**",
+                "/home/kdoubled/ros_ws/src/hls_lfcd_lds_driver/include/**",
+                "/home/kdoubled/ros_ws/src/learning_tf/include/**",
+                "/home/kdoubled/ros_ws/src/relaxed_astar_lib/include/**",
+                "/home/kdoubled/ros_ws/src/relaxed_astar_planner/include/**",
+                "/home/kdoubled/ros_ws/src/turtlebot3_simulations/turtlebot3_fake/include/**",
+                "/home/kdoubled/ros_ws/src/turtlebot3_simulations/turtlebot3_gazebo/include/**",
+                "/home/kdoubled/ros_ws/src/turtlebot3/turtlebot3_slam/include/**",
+                "/home/kdoubled/ros_ws/src/tutorial_pkg/include/**",
+                "/usr/include/**"
+            ],
+            "name": "ROS",
+            "intelliSenseMode": "gcc-x64",
+            "compilerPath": "/usr/bin/gcc",
+            "cStandard": "gnu11",
+            "cppStandard": "gnu++14"
+        }
+    ],
+    "version": 4
+}
