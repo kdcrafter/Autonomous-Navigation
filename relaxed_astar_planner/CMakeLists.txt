@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.0.2)
 project(relaxed_astar_planner)
 
-# add_compile_options(-std=c++11)
+add_compile_options(-std=c++11)
 
 find_package(catkin REQUIRED COMPONENTS
   pluginlib
@@ -37,4 +37,8 @@ install(TARGETS relaxed_astar_planner
 install(DIRECTORY include/${PROJECT_NAME}/
   DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}
   PATTERN ".svn" EXCLUDE
+)
+
+install(FILES bgp_plugin.xml
+    DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
 )

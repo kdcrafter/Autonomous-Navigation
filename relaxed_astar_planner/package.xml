@@ -23,6 +23,6 @@
   <exec_depend>nav_core</exec_depend>
 
   <export>
-
+    <nav_core plugin="${prefix}/bgp_plugin.xml" />
   </export>
 </package>

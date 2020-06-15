@@ -1,0 +1,5 @@
+<library path="lib/librelaxed_astar_planner">
+  <class name="relaxed_astar_planner/RelaxedAStarPlanner" type="relaxed_astar_planner::RelaxedAStarPlanner" base_class_type="nav_core::BaseGlobalPlanner">
+    <description>This is a Relaxed A* global planner plugin.</description>
+  </class>
+ </library>

@@ -17,14 +17,10 @@ namespace relaxed_astar_planner {
             this->costmap_ros = costmap_ros;
             costmap = this->costmap_ros->getCostmap();
 
-            resolution = costmap->getResolution();
-            grid_width = costmap->getSizeInCellsX();
-            grid_height = costmap->getSizeInCellsY();
-            grid_size = grid_width * grid_height;
-            t_break = 1 + 1/(grid_width+grid_height);
+            t_break = 1 + 1/(costmap->getSizeInCellsX()+costmap->getSizeInCellsY());
 
             ros::NodeHandle nh("~/" + name);
-            nh.param("step_size", step_size, resolution);
+            nh.param("step_size", step_size, costmap->getResolution());
             nh.param("min_dist_from_robot", min_dist_from_robot, 0.10);
 
             world_model = new base_local_planner::CostmapModel(*costmap);
@@ -37,79 +33,131 @@ namespace relaxed_astar_planner {
 
     bool RelaxedAStarPlanner::makePlan(const geometry_msgs::PoseStamped& start, 
         const geometry_msgs::PoseStamped& goal, std::vector<geometry_msgs::PoseStamped>& plan) {
-    
-        // TODO: function to check if start, end are valid ?
 
+        // check if plan can be made
         if (!initialized) {
-            ROS_ERROR("The planner has not been initialized, please call initialize() to use the planner");
+            ROS_ERROR("The planner is not initialized. Call initialize() to use planner");
             return false;
         }
 
         if (goal.header.frame_id != costmap_ros->getGlobalFrameID()) {
-            ROS_ERROR("This planner as configured will only accept goals in the %s frame, but a goal was sent in the %s frame.", costmap_ros->getGlobalFrameID().c_str(), goal.header.frame_id.c_str());
+            ROS_ERROR("The goal pose is in the %s frame, not the %s frame", goal.header.frame_id.c_str(), costmap_ros->getGlobalFrameID().c_str());
 
             return false;
         }
 
-        plan.clear();
-        costmap = costmap_ros->getCostmap();
+        if (start.header.frame_id != costmap_ros->getGlobalFrameID()) {
+            ROS_ERROR("The start pose is in the %s frame, not the %s frame", goal.header.frame_id.c_str(), costmap_ros->getGlobalFrameID().c_str());
 
-        GridPoint goal_point(goal.pose.position.x, goal.pose.position.y);
-        int goal_index = getIndex(goal_point);
-
-        GridPoint start_point(start.pose.position.x, start.pose.position.y);
-        Node start_node(getIndex(start_point), getHCost(start_point, goal_point));
-
-        if (isObstacle(start_point) || !inGrid(start_point) || isObstacle(goal_point) || !inGrid(goal_point)) {
-            ROS_WARN("Not valid start or goal");
             return false;
         }
+        
+        plan.clear(); // clear plan in case it contains old data
 
+        costmap = costmap_ros->getCostmap(); // get costmap again in case it has updated ?
+
+        // convert world coordinates to costmap indexes
+        unsigned int start_x, start_y;
+        if (!costmap->worldToMap(start.pose.position.x, start.pose.position.y, start_x, start_y)) {
+            ROS_WARN("The start pose is not in bounds");
+            return false;
+        }
+        Point start_point(start_x, start_y, costmap);
+
+        unsigned int goal_x, goal_y;
+        costmap->worldToMap(goal.pose.position.x, goal.pose.position.y, goal_x, goal_y);
+        Point goal_point(goal_x, goal_y, costmap);
+
+        std::vector<float> g_cost = getGCosts(start_point, goal_point); // move constructor used ?
+
+        gCostCompare compare(g_cost);
+        std::vector<unsigned int> path = getCostmapPath(start_point, goal_point, compare);
+
+        // reverse path and convert path indexes to world coordinates
+        plan = getWorldPath(path);
+        return true;
+    }
+
+    std::vector<float> RelaxedAStarPlanner::getGCosts(const Point start_point, const Point goal_point) {
+        const unsigned int costmap_size = costmap->getSizeInCellsX() * costmap->getSizeInCellsY(); 
+        std::vector<float> g_cost(costmap_size, std::numeric_limits<float>::infinity());
+        g_cost[start_point.index()] = 0.0;
+
+        Node start_node(start_point.index(), getHCost(start_point, goal_point));
         std::multiset<Node> open_set {start_node};
 
-        std::vector<float> g_cost(grid_size, std::numeric_limits<float>::infinity());
-        g_cost[start_node.index] = 0.0;
-
-        while (!open_set.empty() && std::isinf(g_cost[goal_index])) {
-            int curr_index = open_set.begin()->index;
+        while (!open_set.empty() && std::isinf(g_cost[goal_point.index()])) {
+            Point curr_point(open_set.begin()->index(), costmap);
             open_set.erase(open_set.begin());
 
-            GridPoint curr_point(getXIndex(curr_index), getYIndex(curr_index));
-            for (Action action : getAdjIndexes(curr_point)) {
-                int new_index = getIndex(action.pos);
-                if (std::isinf(g_cost[new_index])) {
-                    g_cost[new_index] = g_cost[curr_index] + action.g_cost;
-                    float f_cost = g_cost[new_index] + t_break*getHCost(action.pos, goal_point);
+            for (Action action : actions) {
+                Point adj_point(curr_point.x() + action.dx(), curr_point.y() + action.dy(), costmap);
 
-                    Node adj_node(new_index, f_cost);
-                    open_set.insert(adj_node);
-                }
+                g_cost[adj_point.index()] = g_cost[curr_point.index()] + action.g_cost();
+                float f_cost = g_cost[adj_point.index()] + t_break*getHCost(adj_point, goal_point);
+    
+                Node adj_node(adj_point.index(), f_cost);
+                open_set.insert(adj_node);
             }
         }
 
-        // ...
+        return g_cost;
     }
 
-    std::vector<Action> RelaxedAStarPlanner::getAdjIndexes(GridPoint pos) {
-        std::vector<Action> possible_actions {
-            Action(GridPoint(pos.x + 1, pos.y), 1.0), // right
-            Action(GridPoint(pos.x - 1, pos.y), 1.0), // left
-            Action(GridPoint(pos.x, pos.y - 1), 1.0), // down
-            Action(GridPoint(pos.x + 1, pos.y - 1), M_SQRT2), //down right
-            Action(GridPoint(pos.x - 1, pos.y - 1), M_SQRT2), //down left
-            Action(GridPoint(pos.x, pos.y + 1), 1.0), // up
-            Action(GridPoint(pos.x + 1, pos.y + 1), M_SQRT2), // up right
-            Action(GridPoint(pos.x - 1, pos.y + 1), M_SQRT2), // up left
-        };
+    std::vector<unsigned int> RelaxedAStarPlanner::getCostmapPath(const Point start_point, 
+        const Point goal_point, const gCostCompare& compare) {
 
-        std::vector<Action> valid_actions;
-        valid_actions.reserve(8);
+        std::vector<unsigned int> path;
 
-        for (Action action : possible_actions) {
-            if (!isObstacle(action.pos) && inGrid(action.pos))  
-                valid_actions.push_back(action);
+        // find path from goal to start
+        Point curr_point = goal_point;
+        path.push_back(curr_point.index());
+
+        while (curr_point != start_point) {
+            std::vector<Point> adj_points = getAdjPoints(curr_point);
+            curr_point = *std::min_element(adj_points.begin(), adj_points.end(), compare);
+            path.push_back(curr_point.index());
         }
 
-        return valid_actions;
+        return path;
+    }
+
+    std::vector<geometry_msgs::PoseStamped> RelaxedAStarPlanner::getWorldPath(std::vector<unsigned int>& path) {
+        std::vector<geometry_msgs::PoseStamped> world_path(path.size());
+
+        for (int i = path.size()-1; i >= 0; i--) {
+            Point point(path[i], costmap);
+            geometry_msgs::PoseStamped pose;
+
+            pose.pose.position.x = point.x();
+            pose.pose.position.y = point.y();
+            pose.pose.position.z = 0.0;
+
+            pose.pose.orientation.x = 0.0;
+            pose.pose.orientation.y = 0.0;
+            pose.pose.orientation.z = 0.0;
+            pose.pose.orientation.w = 1.0;
+
+            world_path[i] = pose;
+        }
+
+        return world_path;
+    }
+
+    std::vector<Point> RelaxedAStarPlanner::getAdjPoints(const Point point) {
+        std::vector<Point> points;
+        points.reserve(actions.size());
+
+        for (Action action : actions)
+            points.push_back(Point(point.x() + action.dx(), point.y() + action.dy(), costmap));
+
+        return points;
+    }
+
+    float RelaxedAStarPlanner::getHCost(const Point src, const Point dst) {
+        unsigned int dx = dst.x() > src.x() ? dst.x() - src.x() : src.x() - dst.x();
+        unsigned int dy = dst.y() > src.y() ? dst.y() - src.y() : src.y() - dst.y();
+        return (float) (dx + dy);
     }
 };
+
