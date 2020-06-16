@@ -91,7 +91,12 @@ namespace relaxed_astar_planner {
             open_set.erase(open_set.begin());
 
             for (Action action : actions) {
-                Point adj_point(curr_point.x() + action.dx(), curr_point.y() + action.dy(), costmap);
+                unsigned int adj_x, adj_y;
+                if (!addInBounds(0, costmap->getSizeInCellsX(), curr_point.x(), action.dx(), adj_x))
+                    continue;
+                if (!addInBounds(0, costmap->getSizeInCellsY(), curr_point.y(), action.dy(), adj_y))
+                    continue;
+                Point adj_point(adj_x, adj_y, costmap);
 
                 g_cost[adj_point.index()] = g_cost[curr_point.index()] + action.g_cost();
                 float f_cost = g_cost[adj_point.index()] + t_break*getHCost(adj_point, goal_point);
@@ -125,7 +130,7 @@ namespace relaxed_astar_planner {
     std::vector<geometry_msgs::PoseStamped> RelaxedAStarPlanner::getWorldPath(std::vector<unsigned int>& path) {
         std::vector<geometry_msgs::PoseStamped> world_path(path.size());
 
-        for (int i = path.size()-1; i >= 0; i--) {
+        for (int i = 0; i < path.size(); i++) {
             Point point(path[i], costmap);
             geometry_msgs::PoseStamped pose;
 
@@ -138,7 +143,7 @@ namespace relaxed_astar_planner {
             pose.pose.orientation.z = 0.0;
             pose.pose.orientation.w = 1.0;
 
-            world_path[i] = pose;
+            world_path[path.size()-1-i] = pose;
         }
 
         return world_path;
@@ -148,8 +153,15 @@ namespace relaxed_astar_planner {
         std::vector<Point> points;
         points.reserve(actions.size());
 
-        for (Action action : actions)
-            points.push_back(Point(point.x() + action.dx(), point.y() + action.dy(), costmap));
+        for (Action action : actions) {
+            unsigned int adj_x, adj_y;
+            if (!addInBounds(0, costmap->getSizeInCellsX(), point.x(), action.dx(), adj_x))
+                continue;
+            if (!addInBounds(0, costmap->getSizeInCellsY(), point.y(), action.dy(), adj_y))
+                continue;
+
+            points.push_back(Point(adj_x, adj_y, costmap));
+        }
 
         return points;
     }
@@ -159,5 +171,15 @@ namespace relaxed_astar_planner {
         unsigned int dy = dst.y() > src.y() ? dst.y() - src.y() : src.y() - dst.y();
         return (float) (dx + dy);
     }
-};
 
+    bool RelaxedAStarPlanner::addInBounds(unsigned int max, unsigned int min, unsigned int value, int delta, unsigned int& result) {
+        if (value > max - delta)
+            return false;
+        else if (value < min + delta)
+            return false;
+        else {
+            result = value + delta;
+            return true;
+        }
+    }
+};

@@ -119,13 +119,15 @@ namespace relaxed_astar_planner {
         std::vector<float> getGCosts(const Point start_point, const Point goal_point);
 
         std::vector<unsigned int> getCostmapPath(const Point start_point, const Point goal_point, 
-            const gCostCompare& compare); // unsigned int ?
+            const gCostCompare& compare);
 
         std::vector<geometry_msgs::PoseStamped> getWorldPath(std::vector<unsigned int>& path);
 
         std::vector<Point> getAdjPoints(const Point point);
 
         float getHCost(const Point src, const Point dst);
+
+        bool addInBounds(unsigned int max, unsigned int min, unsigned int value, int delta, unsigned int& result);
     };
 };
 
